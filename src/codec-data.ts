@@ -34,6 +34,7 @@ import { MetadataTags } from './metadata';
 
 export enum AvcNalUnitType {
 	IDR = 5,
+	SEI = 6,
 	SPS = 7,
 	PPS = 8,
 	SPS_EXT = 13,
@@ -1713,8 +1714,44 @@ export const determineVideoPacketType = (
 ): PacketType | null => {
 	switch (codec) {
 		case 'avc': {
+			// TODO: In browsers, and Chromium >145, allow Recovery Point SEI as well.
+			// See https://github.com/w3c/webcodecs/issues/650
 			const nalUnits = extractAvcNalUnits(packetData, decoderConfig);
 			const isKeyframe = nalUnits.some(x => extractNalUnitTypeForAvc(x) === AvcNalUnitType.IDR);
+
+			if (!isKeyframe) {
+				const seiUnit = nalUnits.find(x => extractNalUnitTypeForAvc(x) === AvcNalUnitType.SEI);
+				if (seiUnit) {
+					const bitstream = new Bitstream(removeEmulationPreventionBytes(seiUnit));
+
+					bitstream.skipBits(8); // Skip NALU header
+
+					// sei_message()
+					let payloadType = 0;
+					while (true) {
+						const nextByte = bitstream.readAlignedByte();
+						payloadType += nextByte;
+
+						if (nextByte < 255) {
+							break;
+						}
+					}
+
+					let payloadSize = 0;
+					while (true) {
+						const nextByte = bitstream.readAlignedByte();
+						payloadSize += nextByte;
+
+						if (nextByte < 255) {
+							break;
+						}
+					}
+
+					if (payloadType === 6) { // recovery_point
+
+					}
+				}
+			}
 
 			return isKeyframe ? 'key' : 'delta';
 		};
